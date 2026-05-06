@@ -70,7 +70,10 @@ public class VpnTunnelService extends VpnService {
   private static final String TUNNEL_CONFIG_KEY = "config";
   private static final String TUNNEL_SERVER_NAME = "serverName";
 
-  public static final String STATUS_BROADCAST_KEY = "onStatusChange";
+  public static final String TUNNEL_STATUS_CHANGED_ACTION =
+      "org.outline.action.TUNNEL_STATUS_CHANGED";
+  public static final String STATUS_BROADCAST_KEY = TUNNEL_STATUS_CHANGED_ACTION;
+  public static final String DISCONNECT_ACTION = "org.outline.vpn.DISCONNECT";
 
   public enum TunnelStatus {
     INVALID(-1), // Internal use only.
@@ -159,6 +162,11 @@ public class VpnTunnelService extends VpnService {
     LOG.info(String.format(Locale.ROOT, "Starting VPN service: %s", intent));
     int superOnStartReturnValue = super.onStartCommand(intent, flags, startId);
     if (intent != null) {
+      if (DISCONNECT_ACTION.equals(intent.getAction())) {
+        updateTunnelStatus(TunnelStatus.DISCONNECTED);
+        tearDownActiveTunnel();
+        return START_NOT_STICKY;
+      }
       // VpnServiceStarter puts AUTOSTART_EXTRA in the intent when the service starts automatically.
       boolean startedByVpnStarter =
           intent.getBooleanExtra(VpnServiceStarter.AUTOSTART_EXTRA, false);
@@ -304,6 +312,7 @@ public class VpnTunnelService extends VpnService {
     startNetworkConnectivityMonitor();
     startForegroundWithNotification(config.name);
     storeActiveTunnel(config);
+    broadcastVpnConnectivityChange(TunnelStatus.CONNECTED);
     return null;
   }
 
@@ -314,6 +323,7 @@ public class VpnTunnelService extends VpnService {
           Platerrors.InternalError,
           "VPN profile is not active"));
     }
+    broadcastVpnConnectivityChange(TunnelStatus.DISCONNECTED);
     tearDownActiveTunnel();
     return null;
   }
@@ -409,9 +419,28 @@ public class VpnTunnelService extends VpnService {
           && activeNetworkInfo.getState() == NetworkInfo.State.CONNECTED) {
         return;
       }
+      if (hasActiveNonVpnInternetNetwork()) {
+        return;
+      }
       broadcastVpnConnectivityChange(TunnelStatus.RECONNECTING);
       updateNotification(TunnelStatus.RECONNECTING);
     }
+  }
+
+  private boolean hasActiveNonVpnInternetNetwork() {
+    final ConnectivityManager connectivityManager =
+        (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+    for (Network network : connectivityManager.getAllNetworks()) {
+      NetworkCapabilities capabilities = connectivityManager.getNetworkCapabilities(network);
+      if (capabilities == null) {
+        continue;
+      }
+      if (capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+          && capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private void startNetworkConnectivityMonitor() {
@@ -420,6 +449,7 @@ public class VpnTunnelService extends VpnService {
     NetworkRequest request = new NetworkRequest.Builder()
                                  .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
                                  .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_RESTRICTED)
+                                 .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
                                  .build();
     // `registerNetworkCallback` returns the VPN interface as the default network since Android P.
     // Use `requestNetwork` instead (requires android.permission.CHANGE_NETWORK_STATE).
@@ -434,8 +464,12 @@ public class VpnTunnelService extends VpnService {
 
   /* Broadcast change in the VPN connectivity. */
   private void broadcastVpnConnectivityChange(TunnelStatus status) {
+    if (tunnelStore != null) {
+      tunnelStore.setTunnelStatus(status);
+    }
     if (tunnelConfig == null) {
       LOG.warning("Tunnel disconnected, not sending VPN connectivity broadcast");
+      OutlineConnectWidgetProvider.updateAllWidgets(this);
       return;
     }
     Intent statusChange = new Intent(STATUS_BROADCAST_KEY);
@@ -445,6 +479,14 @@ public class VpnTunnelService extends VpnService {
     statusChange.putExtra(MessageData.PAYLOAD.value, status.value);
     statusChange.putExtra(MessageData.TUNNEL_ID.value, tunnelConfig.id);
     sendBroadcast(statusChange);
+    OutlineConnectWidgetProvider.updateAllWidgets(this);
+  }
+
+  private void updateTunnelStatus(TunnelStatus status) {
+    if (tunnelStore != null) {
+      tunnelStore.setTunnelStatus(status);
+    }
+    broadcastVpnConnectivityChange(status);
   }
 
   // Autostart
@@ -454,11 +496,13 @@ public class VpnTunnelService extends VpnService {
     JSONObject tunnel = tunnelStore.load();
     if (tunnel == null) {
       LOG.info("Last successful tunnel not found. User not connected at shutdown/install.");
+      broadcastVpnConnectivityChange(TunnelStatus.DISCONNECTED);
       return;
     }
     if (VpnTunnelService.prepare(VpnTunnelService.this) != null) {
       // We cannot prepare the VPN when running as a background service, as it requires UI.
       LOG.warning("VPN not prepared, aborting auto-connect.");
+      broadcastVpnConnectivityChange(TunnelStatus.DISCONNECTED);
       return;
     }
     try {
@@ -473,6 +517,7 @@ public class VpnTunnelService extends VpnService {
       startTunnel(tunnelConfig, true);
     } catch (Exception e) {
       LOG.log(Level.SEVERE, "Failed to retrieve JSON tunnel data", e);
+      broadcastVpnConnectivityChange(TunnelStatus.DISCONNECTED);
     }
   }
 
@@ -542,8 +587,12 @@ public class VpnTunnelService extends VpnService {
   @NonNull
   private Notification.Builder getNotificationBuilder(final String serverName) throws Exception {
     Intent launchIntent = new Intent(this, getPackageMainActivityClass());
+    int pendingIntentFlags = PendingIntent.FLAG_UPDATE_CURRENT;
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+      pendingIntentFlags |= PendingIntent.FLAG_IMMUTABLE;
+    }
     PendingIntent mainActivityIntent =
-        PendingIntent.getActivity(this, 0, launchIntent, PendingIntent.FLAG_UPDATE_CURRENT);
+        PendingIntent.getActivity(this, 0, launchIntent, pendingIntentFlags);
 
     Notification.Builder builder;
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

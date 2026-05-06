@@ -16,6 +16,7 @@
 -->
 
 <plugin xmlns="http://apache.org/cordova/ns/plugins/1.0"
+        xmlns:android="http://schemas.android.com/apk/res/android"
         id="cordova-plugin-outline" version="0.0.0">
   <name>Outline Cordova Plugin</name>
   <description>Native plugin for the Outline app</description>
@@ -63,6 +64,35 @@
             <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
           </intent-filter>
       </receiver>
+
+      <receiver
+        android:name="org.outline.vpn.OutlineConnectWidgetProvider"
+        android:exported="true"
+        android:label="@string/outline_widget_name">
+        <intent-filter>
+          <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+        </intent-filter>
+        <intent-filter>
+          <action android:name="org.outline.action.TUNNEL_STATUS_CHANGED" />
+          <category android:name="org.outline.android.client" />
+        </intent-filter>
+        <intent-filter>
+          <action android:name="org.outline.vpn.widget.CONNECT" />
+        </intent-filter>
+        <intent-filter>
+          <action android:name="org.outline.vpn.DISCONNECT" />
+        </intent-filter>
+        <intent-filter>
+          <action android:name="org.outline.vpn.widget.OPEN_APP" />
+        </intent-filter>
+        <meta-data
+          android:name="android.appwidget.provider"
+          android:resource="@xml/outline_connect_widget_info" />
+      </receiver>
+      <receiver
+        android:name="org.outline.vpn.OutlineConnectWidgetActionReceiver"
+        android:enabled="true"
+        android:exported="false" />
 
       <meta-data android:name="io.sentry.auto-init" android:value="false" />
     </config-file>

@@ -21,7 +21,8 @@ vars:
   OUT_DIR: '{{joinPath .REPO_ROOT "output/client"}}'
   BIN_DIR: '{{joinPath .OUT_DIR "/bin"}}'
   MOBILE_PKG: "{{.TASKFILE_DIR}}/outline/tun2socks"
-  GOMOBILE_BIND_CMD: "env PATH=\"{{.BIN_DIR}}:${PATH}\" CGO_CFLAGS='-fstack-protector-strong' '{{.BIN_DIR}}/gomobile' bind -ldflags='-s -w'"
+  GOMOBILE_BIND_CMD: >-
+    bash '{{joinPath .TASKFILE_DIR "gomobile_bind.sh"}}' '{{.BIN_DIR}}'
 
 tasks:
   electron:

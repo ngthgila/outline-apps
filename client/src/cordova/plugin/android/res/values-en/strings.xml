@@ -22,4 +22,12 @@
   <string name="connected_server_state">Connected</string>
   <string name="reconnecting_server_state">Reconnecting...</string>
   <string name="server_default_name_outline">Outline Server</string>
+  <string name="outline_widget_name">Outline</string>
+  <string name="outline_widget_description">Connect or disconnect Outline from your home screen</string>
+  <string name="outline_widget_connect">Connect</string>
+  <string name="outline_widget_disconnect">Disconnect</string>
+  <string name="outline_widget_connecting">Connecting...</string>
+  <string name="outline_widget_disconnected">Disconnected</string>
+  <string name="outline_widget_no_server">No server selected</string>
+  <string name="outline_widget_open_app_hint">Open Outline to choose a server</string>
 </resources>
